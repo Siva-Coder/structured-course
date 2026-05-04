@@ -86,7 +86,7 @@ function Auth({ setUser, setView }) {
   };
 
   const register = async () => {
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
     });
@@ -156,6 +156,7 @@ function Plan({
 }) {
   useEffect(() => {
     generatePlan();
+    // eslint-disable-next-line
   }, []);
 
   const generatePlan = async () => {
