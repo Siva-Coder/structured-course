@@ -1,191 +1,48 @@
-import React, { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import React, { useState } from "react";
+import { FiSend, FiClock } from "react-icons/fi";
 
-/* ---------------- CONFIG ---------------- */
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const REACT_APP_GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+/* ENV */
+const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-/* ---------------- MAIN APP ---------------- */
 export default function Course() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState("login");
+  const [query, setQuery] = useState("");
   const [plan, setPlan] = useState([]);
+  const [screen, setScreen] = useState("home");
   const [loading, setLoading] = useState(false);
-  const [selectedCourse, setSelectedCourse] = useState("");
-
-  useEffect(() => {
-    checkUser();
-  }, []);
-
-  const checkUser = async () => {
-    const { data } = await supabase.auth.getUser();
-    if (data?.user) {
-      setUser(data.user);
-      setView("dashboard");
-    }
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setView("login");
-  };
-
-  return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>AI Course Planner</h1>
-
-      {!user && view === "login" && (
-        <Auth setUser={setUser} setView={setView} />
-      )}
-
-      {user && view === "dashboard" && (
-        <Dashboard
-          setView={setView}
-          setSelectedCourse={setSelectedCourse}
-        />
-      )}
-
-      {user && view === "plan" && (
-        <Plan
-          course={selectedCourse}
-          plan={plan}
-          setPlan={setPlan}
-          loading={loading}
-          setLoading={setLoading}
-          goBack={() => setView("dashboard")}
-        />
-      )}
-
-      {user && (
-        <button style={styles.logout} onClick={logout}>
-          Logout
-        </button>
-      )}
-    </div>
-  );
-}
-
-/* ---------------- AUTH ---------------- */
-function Auth({ setUser, setView }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  const login = async () => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (!error) {
-      setUser(data.user);
-      setView("dashboard");
-    } else alert(error.message);
-  };
-
-  const register = async () => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    if (!error) alert("Check your email for confirmation");
-    else alert(error.message);
-  };
-
-  return (
-    <div style={styles.card}>
-      <input
-        placeholder="Email"
-        style={styles.input}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        style={styles.input}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <button style={styles.button} onClick={login}>
-        Login
-      </button>
-      <button style={styles.buttonOutline} onClick={register}>
-        Register
-      </button>
-    </div>
-  );
-}
-
-/* ---------------- DASHBOARD ---------------- */
-function Dashboard({ setView, setSelectedCourse }) {
-  const courses = [
-    "Java Full Stack",
-    "React Developer",
-    "Node.js Backend",
-  ];
-
-  return (
-    <div style={styles.grid}>
-      {courses.map((course) => (
-        <div key={course} style={styles.card}>
-          <h3>{course}</h3>
-          <button
-            style={styles.button}
-            onClick={() => {
-              setSelectedCourse(course);
-              setView("plan");
-            }}
-          >
-            Create Plan with AI
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ---------------- PLAN ---------------- */
-function Plan({
-  course,
-  plan,
-  setPlan,
-  loading,
-  setLoading,
-  goBack,
-}) {
-  useEffect(() => {
-    generatePlan();
-    // eslint-disable-next-line
-  }, []);
 
   const generatePlan = async () => {
+    if (!query) return;
+
+    setScreen("plan");
     setLoading(true);
 
     const prompt = `
-      Create a structured learning plan for ${course}.
+User query: "${query}"
 
-      Rules:
-      - Minimum 10 steps
-      - Each step must include:
-        - step number
-        - title
-        - description
-        - duration_minutes (realistic estimate)
+Detect the course topic and create a structured learning plan.
 
-      Return ONLY JSON. No markdown.
+STRICT RULES:
+- Minimum 10 steps
+- Each step MUST include ALL fields:
+  - step (number)
+  - title (non-empty string)
+  - description (at least 15 words)
+  - duration_minutes (realistic number like 30, 60, 90)
 
-      Format:
-      [
-        {
-          "step": 1,
-          "title": "",
-          "description": "",
-          "duration_minutes": 60
-        }
-      ]
-      `;
+- Do NOT leave any field empty
+- Do NOT return "Untitled"
+- Do NOT return empty description
 
+Return ONLY valid JSON array like:
+[
+  {
+    "step": 1,
+    "title": "Introduction to JavaScript",
+    "description": "Learn what JavaScript is, how it works in browsers, and basic syntax with variables and data types.",
+    "duration_minutes": 60
+  }
+]
+`;
 
     try {
       const res = await fetch(
@@ -193,7 +50,7 @@ function Plan({
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${REACT_APP_GEMINI_API_KEY}`,
+            Authorization: `Bearer ${GEMINI_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -206,214 +63,275 @@ function Plan({
       const data = await res.json();
 
       let text = data.choices?.[0]?.message?.content || "";
-      text = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
 
       const match = text.match(/\[[\s\S]*\]/);
 
-      if (!match) {
-        console.error("No JSON array found:", text);
-        alert("AI response invalid");
-        return;
-      }
+      const parsed = JSON.parse(match[0]).map((item, i) => {
+        let title = item.title?.trim();
+        let desc = item.description?.trim();
 
-      let parsed;
+        // fallback fixes
+        if (!title || title.toLowerCase() === "untitled") {
+          title = `Step ${i + 1} Learning`;
+        }
 
-      try {
-        parsed = JSON.parse(match[0]);
-      } catch (err) {
-        console.error("Parse error:", match[0]);
-        alert("AI failed. Check JSON format.");
-        return;
-      }
+        if (!desc || desc.length < 10) {
+          desc = "Detailed explanation will be covered in this step to build strong understanding of the topic.";
+        }
 
-      // 3. Ensure duration always exists
-      parsed = parsed.map((item, index) => ({
-        step: item.step || index + 1,
-        title: item.title || "Untitled",
-        description: item.description || "",
-        duration_minutes: item.duration_minutes || 60,
-      }));
+        return {
+          step: item.step || i + 1,
+          title,
+          description: desc,
+          duration_minutes:
+            item.duration_minutes && item.duration_minutes > 0
+              ? item.duration_minutes
+              : 45,
+        };
+      });
+      console.log(parsed);
 
       setPlan(parsed);
     } catch (e) {
-      console.error(e);
-      alert("AI failed. Check JSON format.");
+      alert("AI failed");
     }
 
     setLoading(false);
   };
 
   return (
-    <div>
-      <h2>{course} Plan</h2>
+    <div style={styles.container}>
+      {/* HEADER */}
+      <div style={styles.header}>AI Learner</div>
 
-      <button style={styles.buttonOutline} onClick={goBack}>
-        Back
-      </button>
+      {/* HOME */}
+      {screen === "home" && (
+        <div style={styles.center}>
+          <div style={styles.searchBox}>
+            <input
+              style={styles.input}
+              placeholder="What do you want to learn?"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && generatePlan()}
+            />
 
-      {loading ? <p>Generating plan...</p> :
-        <div style={styles.timeline}>
-          {/* Single continuous line */}
-          <div style={styles.verticalLine}></div>
-
-          {plan.map((step, i) => (
-            <div key={i} style={styles.timelineItem}>
-
-              {/* Circle */}
-              <div style={styles.circle}>
-                {step.step}
-              </div>
-
-              {/* Card */}
-              <div style={styles.timelineContent}>
-                <div style={styles.stepHeader}>
-                  <h4 style={styles.stepTitle}>{step.title}</h4>
-                  <span style={styles.duration}>
-                    ⏱ {step.duration_minutes} min
-                  </span>
-                </div>
-
-                <p style={styles.stepDesc}>{step.description}</p>
-              </div>
-
+            <div style={styles.sendBtn} onClick={generatePlan}>
+              <FiSend />
             </div>
-          ))}
+          </div>
         </div>
-      }
+      )}
+
+      {/* PLAN */}
+      {screen === "plan" && (
+        <div style={styles.timelineWrapper}>
+          <button style={styles.backBtn} onClick={() => setScreen("home")}>
+            ← Back
+          </button>
+
+          {loading ? <p>Generating...</p> :
+            <div style={styles.timeline}>
+              {/* LINE */}
+              <div style={styles.line}></div>
+
+              {plan.map((step, i) => (
+                <div key={i} style={styles.item}>
+                  {/* DOT */}
+                  <div style={styles.dot}>{step.step}</div>
+
+                  {/* CARD */}
+                  <div style={styles.card}
+                    onMouseEnter={e => e.currentTarget.style.transform = "translateY(-4px)"}
+                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
+                    <div style={styles.cardHeader}>
+                      <h4 style={styles.title}>{step.title}</h4>
+
+                      <div style={styles.duration}>
+                        <FiClock size={14} />
+                        {step.duration_minutes} min
+                      </div>
+                    </div>
+
+                    <p style={styles.desc}>{step.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          }
 
 
-
-      {plan.length > 0 && (
-        <button style={styles.button}>Start Learning</button>
+        </div>
       )}
     </div>
   );
 }
 
-/* ---------------- STYLES ---------------- */
-const violet = "#7c3aed";
+/* ===== STYLES ===== */
+
+const primary = "#f97316";
 
 const styles = {
   container: {
-    fontFamily: "sans-serif",
-    textAlign: "center",
-    padding: 20,
+    minHeight: "100vh",
+    fontFamily: "Inter, sans-serif",
+    background: `
+    radial-gradient(circle at 20% 20%, #ffedd5, transparent 40%),
+    radial-gradient(circle at 80% 30%, #fde68a, transparent 40%),
+    radial-gradient(circle at 50% 80%, #fed7aa, transparent 40%),
+    #f8fafc
+  `,
   },
-  title: {
-    color: violet,
-  },
-  card: {
-    border: "1px solid #eee",
-    padding: 20,
-    margin: 10,
-    borderRadius: 10,
-  },
-  input: {
-    display: "block",
-    margin: "10px auto",
-    padding: 10,
-    width: 200,
-  },
-  button: {
-    background: violet,
+
+  header: {
+    padding: "20px 40px",
+    fontSize: 22,
+    fontWeight: 600,
     color: "#fff",
-    padding: "10px 20px",
-    border: "none",
-    borderRadius: 6,
-    margin: 5,
-    cursor: "pointer",
+    background: primary,
+    boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
   },
-  buttonOutline: {
-    border: `1px solid ${violet}`,
-    color: violet,
-    padding: "10px 20px",
-    borderRadius: 6,
-    margin: 5,
-    cursor: "pointer",
-    background: "transparent",
-  },
-  grid: {
+
+  center: {
     display: "flex",
     justifyContent: "center",
+    alignItems: "center",
+    height: "70vh",
   },
+
+  /* SEARCH */
+  searchBox: {
+    display: "flex",
+    alignItems: "center",
+    width: 520,
+    padding: "12px 16px",
+    borderRadius: 50,
+
+    background: "rgba(255,255,255,0.4)",
+    backdropFilter: "blur(25px)",
+
+    border: "1px solid rgba(255,255,255,0.6)",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+  },
+
+  input: {
+    flex: 1,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    fontSize: 16,
+  },
+
+  sendBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: "50%",
+    background: primary,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#fff",
+    cursor: "pointer",
+  },
+
+  /* TIMELINE */
+  timelineWrapper: {
+    maxWidth: 900,
+    margin: "50px 0 0",
+  },
+
+  backBtn: {
+    marginBottom: 20,
+    border: "none",
+    background: "transparent",
+    color: primary,
+    cursor: "pointer",
+  },
+
   timeline: {
     position: "relative",
-    maxWidth: 800,
-    margin: "50px auto",
-    paddingLeft: 50,
+    paddingLeft: 23,
+    paddingRight: 23,
+    paddingBottom: 50,
   },
 
-  verticalLine: {
+  line: {
     position: "absolute",
+    left: 36,
     top: 0,
     bottom: 0,
-    left: 20,
     width: 3,
-    background: "linear-gradient(to bottom, #7c3aed, #c084fc)",
+    background: primary,
   },
 
-  timelineItem: {
+  item: {
     position: "relative",
     marginBottom: 60,
   },
 
-  circle: {
+  dot: {
     position: "absolute",
-    left: -46,
-    top: 5,
     width: 28,
     height: 28,
     borderRadius: "50%",
-    background: "#7c3aed",
+    background: primary,
     color: "#fff",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontSize: 12,
     fontWeight: "bold",
-    border: "3px solid #fff",
-    boxShadow: "0 0 0 4px rgba(124,58,237,0.2)",
-    zIndex: 2,
+    boxShadow: "0 0 0 6px rgba(249,115,22,0.2)",
   },
 
-  timelineContent: {
-    background: "#0f172a",
-    color: "#fff",
-    padding: 20,
-    borderRadius: 14,
-    marginLeft: 25,
-    boxShadow: "0 8px 25px rgba(0,0,0,0.25)",
-    transition: "transform 0.2s ease",
+  /* GLASS CARD (REAL EFFECT) */
+  card: {
+    marginLeft: 60,
+    padding: 22,
+    borderRadius: 18,
+
+    // REAL glass
+    background: "rgba(255, 255, 255, 0.35)",
+    backdropFilter: "blur(30px)",
+    WebkitBackdropFilter: "blur(30px)",
+
+    border: "1px solid rgba(255,255,255,0.6)",
+
+    boxShadow: `
+    0 8px 32px rgba(0,0,0,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.6)
+  `,
+    transition: "all 0.3s ease",
   },
 
-  stepTitle: {
-    margin: "0 0 10px",
-    fontSize: 18,
-  },
-
-  stepDesc: {
-    margin: 0,
-    lineHeight: 1.6,
-    color: "#d1d5db",
-  },
-  stepHeader: {
+  cardHeader: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 10,
   },
 
-  duration: {
-    fontSize: 12,
-    background: "#7c3aed22",
-    color: "#c4b5fd",
-    padding: "4px 8px",
-    borderRadius: 6,
-    fontWeight: "bold",
+  title: {
+    margin: 0,
+    fontSize: 16,
+    fontWeight: 600,
   },
-  logout: {
-    position: "absolute",
-    top: 10,
-    right: 10,
+
+  duration: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 12,
+    background: "#fff7ed",
+    padding: "4px 10px",
+    borderRadius: 8,
+    color: "#ea580c",
+  },
+
+  desc: {
+    margin: 0,
+    color: "#475569",
+    lineHeight: 1.6,
+    textAlign: "left"
   },
 };
